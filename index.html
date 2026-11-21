@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#14110f">
+<title>Roj Drone Synth</title>
+<style>
+:root {
+  --bg: #14110f;
+  --panel: #1f1a17;
+  --panel-2: #2a231f;
+  --ink: #efe6dc;
+  --muted: #9c8f83;
+  --accent: #e8a33d;
+  --accent-2: #d1553a;
+  --pad: #332a24;
+  --pad-on: #e8a33d;
+  --learn: #4fb3a9;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-user-select: none; user-select: none; touch-action: none; overscroll-behavior: none; }
+body { padding: max(12px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
+header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+h1 { font-size: 20px; letter-spacing: .2em; margin: 0 auto 0 0; font-weight: 700; }
+h1 span { color: var(--accent); }
+button { font: inherit; color: var(--ink); background: var(--panel-2); border: 1px solid #3d332c;
+  border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+button.on { background: var(--learn); color: #062420; border-color: var(--learn); }
+#start { background: var(--accent); color: #1b1206; border-color: var(--accent); font-weight: 700; }
+#midiStatus { color: var(--muted); font-size: 12px; width: 100%; }
+.wrap { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+section { background: var(--panel); border-radius: 14px; padding: 12px; }
+section h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: .18em; color: var(--muted); font-weight: 600; text-transform: uppercase; }
+.knobs { display: flex; flex-wrap: wrap; gap: 6px 4px; justify-content: space-around; }
+.knob { width: 64px; display: flex; flex-direction: column; align-items: center; gap: 3px; touch-action: none; cursor: ns-resize; }
+.knob svg { width: 46px; height: 46px; display: block; }
+.knob .lbl { font-size: 10px; color: var(--muted); text-align: center; text-transform: uppercase; letter-spacing: .06em; }
+.knob.learning svg circle.face { stroke: var(--learn); stroke-width: 3; }
+.knob.mapped .lbl::after { content: " •"; color: var(--learn); }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.pad { aspect-ratio: 1 / 1; max-height: 120px; width: 100%; border-radius: 12px; background: var(--pad);
+  border: 1px solid #44382f; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px;
+  color: var(--muted); font-size: 11px; touch-action: none; transition: background .06s; position: relative; }
+.pad.on { background: var(--pad-on); color: #1b1206; box-shadow: 0 0 22px rgba(232,163,61,.45); }
+.pad.learning { outline: 3px solid var(--learn); }
+.pad.mapped::before { content: "•"; position: absolute; top: 4px; right: 8px; color: var(--learn); }
+.pairs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pairbox { background: var(--panel-2); border-radius: 12px; padding: 10px; }
+.pairbox .title { font-size: 10px; color: var(--muted); letter-spacing: .15em; margin-bottom: 6px; display: flex; justify-content: space-between; }
+.src { font-size: 11px; padding: 3px 8px; }
+#scope { width: 100%; height: 70px; display: block; background: var(--panel-2); border-radius: 10px; }
+.hint { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+@media (max-width: 520px) {
+  .pairs { grid-template-columns: 1fr; }
+  .knob { width: 48px; }
+  .knob svg { width: 40px; height: 40px; }
+  .knob .lbl { font-size: 9px; }
+  .knobs { gap: 6px 0; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>R<span>O</span>J</h1>
+  <button id="start">▶ Zaženi zvok</button>
+  <button id="learn" title="Klikni gumb, nato premakni kontrolo na MIDI kontrolerju">MIDI learn</button>
+  <button id="clearMap">Počisti mapo</button>
+  <div id="midiStatus">MIDI: ni povezan</div>
+</header>
+
+<div class="wrap">
+  <section style="grid-column: 1 / -1;">
+    <h2>Glasovi — drži za igranje</h2>
+    <div class="pairs" id="pairs"></div>
+  </section>
+  <section>
+    <h2>Hiper LFO</h2>
+    <div class="knobs" id="lfoKnobs"></div>
+  </section>
+  <section>
+    <h2>Delay</h2>
+    <div class="knobs" id="delayKnobs"></div>
+  </section>
+  <section>
+    <h2>Izhod</h2>
+    <div class="knobs" id="outKnobs"></div>
+    <canvas id="scope"></canvas>
+  </section>
+</div>
+<p class="hint">Namig: na iPhonu izklopi tihi način (stikalo ob strani), sicer Safari ne predvaja zvoka.
+Akai APC mini: spodnja vrsta padov = glasovi 1–8, drsniki = parametri (glej README). MIDI learn: vklopi, tapni gumb/pad, premakni kontrolo.</p>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- storage (safe) ---------- */
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+
+/* ---------- parameter model ---------- */
+// each param: value 0..1 normalised, apply() maps to audio
+const params = {};
+function defParam(id, label, def, apply) {
+  params[id] = { id, label, v: def, apply, el: null };
+}
+
+const NV = 8; // voices
+const PAIRS = 4;
+const baseNotes = [41, 41.07, 48, 48.05, 53, 52.93, 60, 60.1]; // MIDI-ish defaults (detuned pairs)
+const midiToHz = m => 440 * Math.pow(2, (m - 69) / 12);
+
+let ctx = null;
+let A = null; // audio graph
+
+/* ---------- curves ---------- */
+function makeDriveCurve(amount) {
+  const n = 2048, c = new Float32Array(n), k = 1 + amount * 40;
+  for (let i = 0; i < n; i++) {
+    const x = i / (n - 1) * 2 - 1;
+    c[i] = Math.tanh(k * x) / Math.tanh(k);
+  }
+  return c;
+}
+function makeSharpCurve(amount) {
+  // morphs sine toward square/folded shape
+  const n = 1024, c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = i / (n - 1) * 2 - 1;
+    const sq = Math.tanh(x * (1 + amount * 12));
+    const fold = Math.sin(x * Math.PI * (0.5 + amount * 1.5));
+    c[i] = (1 - amount) * x + amount * (0.6 * sq + 0.4 * fold);
+  }
+  return c;
+}
+
+/* ---------- build audio ---------- */
+function buildAudio() {
+  ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+  const t = ctx.currentTime;
+  const g = {};
+
+  // output chain: mix -> drive -> delay send/return -> master -> limiter -> dest
+  g.mix = ctx.createGain(); g.mix.gain.value = 0.22;
+  g.drive = ctx.createWaveShaper(); g.drive.oversample = '2x';
+  g.drivePost = ctx.createGain();
+  g.dry = ctx.createGain();
+  g.wet = ctx.createGain();
+  g.master = ctx.createGain();
+  g.limiter = ctx.createDynamicsCompressor();
+  g.limiter.threshold.value = -6; g.limiter.ratio.value = 12; g.limiter.attack.value = 0.003; g.limiter.release.value = 0.2;
+  g.analyser = ctx.createAnalyser(); g.analyser.fftSize = 1024;
+
+  g.mix.connect(g.drive); g.drive.connect(g.drivePost);
+  g.drivePost.connect(g.dry); g.dry.connect(g.master);
+  g.master.connect(g.limiter); g.limiter.connect(g.analyser); g.analyser.connect(ctx.destination);
+
+  // hyper LFO: two LFOs, combined by sum or ring
+  g.lfoA = ctx.createOscillator(); g.lfoA.type = 'triangle';
+  g.lfoB = ctx.createOscillator(); g.lfoB.type = 'square';
+  g.lfoSum = ctx.createGain();
+  g.lfoBGain = ctx.createGain(); // B level into sum
+  g.lfoRing = ctx.createGain(); g.lfoRing.gain.value = 0; // A * B
+  g.lfoRingAmt = ctx.createGain();
+  g.lfoSumAmt = ctx.createGain();
+  g.lfoOut = ctx.createGain();
+  g.lfoA.connect(g.lfoSum); g.lfoB.connect(g.lfoBGain); g.lfoBGain.connect(g.lfoSum);
+  g.lfoA.connect(g.lfoRing); g.lfoB.connect(g.lfoRing.gain);
+  g.lfoSum.connect(g.lfoSumAmt); g.lfoRing.connect(g.lfoRingAmt);
+  g.lfoSumAmt.connect(g.lfoOut); g.lfoRingAmt.connect(g.lfoOut);
+  g.lfoA.start(t); g.lfoB.start(t);
+
+  // voices
+  g.pairBus = [];
+  g.voices = [];
+  for (let p = 0; p < PAIRS; p++) {
+    const bus = ctx.createGain(); bus.gain.value = 1;
+    bus.connect(g.mix);
+    g.pairBus.push(bus);
+  }
+  for (let i = 0; i < NV; i++) {
+    const v = {};
+    v.osc = ctx.createOscillator(); v.osc.type = 'sine';
+    v.osc.frequency.value = midiToHz(baseNotes[i]);
+    v.shape = ctx.createWaveShaper(); v.shape.curve = makeSharpCurve(0);
+    v.vca = ctx.createGain(); v.vca.gain.value = 0;
+    v.osc.connect(v.shape); v.shape.connect(v.vca); v.vca.connect(g.pairBus[i >> 1]);
+    v.osc.start(t);
+    v.on = false;
+    g.voices.push(v);
+  }
+
+  // per-pair modulation: FM from LFO / next pair / self (feedback)
+  g.pairMod = [];
+  for (let p = 0; p < PAIRS; p++) {
+    const m = {};
+    m.depth = ctx.createGain(); m.depth.gain.value = 0; // in Hz
+    m.fromLfo = ctx.createGain(); m.fromNext = ctx.createGain(); m.fromSelf = ctx.createGain();
+    m.selfDelay = ctx.createDelay(0.05); m.selfDelay.delayTime.value = 0.002;
+    g.lfoOut.connect(m.fromLfo);
+    // cycles in Web Audio must contain a DelayNode, otherwise they are muted
+    m.nextDelay = ctx.createDelay(0.05); m.nextDelay.delayTime.value = 0.001;
+    g.pairBus[(p + 1) % PAIRS].connect(m.nextDelay); m.nextDelay.connect(m.fromNext);
+    g.pairBus[p].connect(m.selfDelay); m.selfDelay.connect(m.fromSelf);
+    [m.fromLfo, m.fromNext, m.fromSelf].forEach(n => n.connect(m.depth));
+    m.depth.connect(g.voices[p * 2].osc.frequency);
+    m.depth.connect(g.voices[p * 2 + 1].osc.frequency);
+    m.src = 0;
+    g.pairMod.push(m);
+  }
+
+  // stereo-ish twin delay with saturated feedback, time modulated by LFO
+  g.delayIn = ctx.createGain();
+  g.drivePost.connect(g.delayIn);
+  g.merger = ctx.createChannelMerger(2);
+  g.dl = [0, 1].map(ch => {
+    const d = {};
+    d.node = ctx.createDelay(2.5);
+    d.fb = ctx.createGain();
+    d.sat = ctx.createWaveShaper(); d.sat.curve = makeDriveCurve(0.15);
+    d.tone = ctx.createBiquadFilter(); d.tone.type = 'lowpass'; d.tone.frequency.value = 4200;
+    d.mod = ctx.createGain(); d.mod.gain.value = 0;
+    g.delayIn.connect(d.node);
+    d.node.connect(d.tone); d.tone.connect(d.sat); d.sat.connect(d.fb); d.fb.connect(d.node);
+    d.sat.connect(g.merger, 0, ch);
+    g.lfoOut.connect(d.mod); d.mod.connect(d.node.delayTime);
+    return d;
+  });
+  // cross-feed for ping-pong flavour
+  g.cross = ctx.createGain(); g.cross.gain.value = 0.25;
+  g.dl[0].sat.connect(g.cross); g.cross.connect(g.dl[1].node);
+  g.merger.connect(g.wet); g.wet.connect(g.master);
+
+  A = g;
+  Object.values(params).forEach(p => p.apply(p.v));
+  startScope();
+}
+
+const smooth = (param, value, tc = 0.03) => { if (ctx) param.setTargetAtTime(value, ctx.currentTime, tc); };
+const exp = (v, lo, hi) => lo * Math.pow(hi / lo, v);
+
+/* ---------- voice params ---------- */
+for (let i = 0; i < NV; i++) {
+  defParam(`tune${i}`, `Ton ${i + 1}`, 0.5, v => {
+    if (!A) return;
+    // ±18 semitones around base note
+    const note = baseNotes[i] + (v - 0.5) * 36;
+    smooth(A.voices[i].osc.frequency, midiToHz(note), 0.02);
+  });
+}
+for (let p = 0; p < PAIRS; p++) {
+  defParam(`mod${p}`, 'Mod', 0, v => { if (A) smooth(A.pairMod[p].depth.gain, Math.pow(v, 2) * 900); });
+  defParam(`sharp${p}`, 'Ostro', 0, v => {
+    if (!A) return;
+    const c = makeSharpCurve(v);
+    A.voices[p * 2].shape.curve = c; A.voices[p * 2 + 1].shape.curve = c;
+  });
+  defParam(`env${p}`, 'Ovojnica', 0.35, () => {});
+  defParam(`hold${p}`, 'Drži', 0, () => { if (A) [p * 2, p * 2 + 1].forEach(updateVoiceLevel); });
+}
+/* ---------- lfo / fx / out ---------- */
+defParam('lfoA', 'Hitrost A', 0.3, v => { if (A) smooth(A.lfoA.frequency, exp(v, 0.02, 80)); });
+defParam('lfoB', 'Hitrost B', 0.45, v => { if (A) smooth(A.lfoB.frequency, exp(v, 0.02, 80)); });
+defParam('lfoMix', 'B nivo', 0.3, v => { if (A) smooth(A.lfoBGain.gain, v); });
+defParam('lfoRing', 'Sum ↔ Ring', 0, v => {
+  if (!A) return; smooth(A.lfoSumAmt.gain, 1 - v); smooth(A.lfoRingAmt.gain, v);
+});
+defParam('dTime1', 'Čas L', 0.35, v => { if (A) smooth(A.dl[0].node.delayTime, exp(v, 0.005, 2.0), 0.15); });
+defParam('dTime2', 'Čas D', 0.42, v => { if (A) smooth(A.dl[1].node.delayTime, exp(v, 0.005, 2.0), 0.15); });
+defParam('dFb', 'Feedback', 0.45, v => { if (A) A.dl.forEach(d => smooth(d.fb.gain, v * 1.05)); });
+defParam('dMod', 'Mod časa', 0.05, v => { if (A) A.dl.forEach(d => smooth(d.mod.gain, Math.pow(v, 2) * 0.05)); });
+defParam('dMix', 'Mix', 0.35, v => { if (A) { smooth(A.wet.gain, v); smooth(A.dry.gain, 1 - v * 0.5); } });
+defParam('dTone', 'Barva', 0.6, v => { if (A) A.dl.forEach(d => smooth(d.tone.frequency, exp(v, 300, 12000))); });
+defParam('drive', 'Distorzija', 0.15, v => { if (A) { A.drive.curve = makeDriveCurve(v); smooth(A.drivePost.gain, 1 - v * 0.35); } });
+defParam('vol', 'Glasnost', 0.7, v => { if (A) smooth(A.master.gain, v * v * 1.4); });
+
+/* ---------- voice gating ---------- */
+const held = new Array(NV).fill(0); // count of sources holding the voice (touch + midi)
+function updateVoiceLevel(i) {
+  if (!A) return;
+  const p = i >> 1;
+  const env = params[`env${p}`].v;
+  const hold = params[`hold${p}`].v;
+  const on = held[i] > 0;
+  const target = on ? 1 : hold * 0.8;
+  // env knob: low = fast/percussive, high = slow swells
+  const tc = on ? exp(env, 0.002, 1.5) : exp(env, 0.03, 3.5);
+  const gp = A.voices[i].vca.gain;
+  gp.cancelScheduledValues(ctx.currentTime);
+  gp.setTargetAtTime(target, ctx.currentTime, tc);
+}
+function voiceOn(i) { held[i]++; refreshPad(i); updateVoiceLevel(i); }
+function voiceOff(i) { held[i] = Math.max(0, held[i] - 1); refreshPad(i); updateVoiceLevel(i); }
+
+/* ---------- UI: knobs ---------- */
+function polar(cx, cy, r, a) { return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; }
+function arcPath(v) {
+  const a0 = Math.PI * 0.75, a1 = a0 + Math.PI * 1.5 * v;
+  const [x0, y0] = polar(23, 23, 18, a0), [x1, y1] = polar(23, 23, 18, a1);
+  const large = (a1 - a0) > Math.PI ? 1 : 0;
+  return `M${x0} ${y0} A18 18 0 ${large} 1 ${x1} ${y1}`;
+}
+function renderKnob(p) {
+  const el = p.el; if (!el) return;
+  el.querySelector('.val').setAttribute('d', arcPath(Math.max(0.001, p.v)));
+  const a = Math.PI * 0.75 + Math.PI * 1.5 * p.v;
+  const [x, y] = polar(23, 23, 11, a);
+  el.querySelector('.ptr').setAttribute('x2', x); el.querySelector('.ptr').setAttribute('y2', y);
+}
+function setParam(id, v, fromUI) {
+  const p = params[id]; if (!p) return;
+  p.v = Math.min(1, Math.max(0, v));
+  p.apply(p.v); renderKnob(p);
+  saveStateSoon();
+}
+let learnMode = false, learnTarget = null;
+function makeKnob(id, label) {
+  const p = params[id];
+  const el = document.createElement('div');
+  el.className = 'knob'; el.dataset.id = id;
+  el.innerHTML = `<svg viewBox="0 0 46 46">
+    <circle class="face" cx="23" cy="23" r="15" fill="#2a231f" stroke="#4a3e35" stroke-width="1.5"/>
+    <path d="${arcPath(1)}" fill="none" stroke="#3a302a" stroke-width="4" stroke-linecap="round"/>
+    <path class="val" fill="none" stroke="var(--accent)" stroke-width="4" stroke-linecap="round"/>
+    <line class="ptr" x1="23" y1="23" x2="23" y2="10" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"/>
+  </svg><div class="lbl">${label || p.label}</div>`;
+  p.el = el;
+  let startY = 0, startV = 0, pid = null;
+  el.addEventListener('pointerdown', e => {
+    if (learnMode) { selectLearn({ kind: 'cc', id, el }); return; }
+    pid = e.pointerId; el.setPointerCapture(pid); startY = e.clientY; startV = p.v;
+  });
+  el.addEventListener('pointermove', e => {
+    if (e.pointerId !== pid) return;
+    const fine = e.shiftKey ? 0.25 : 1;
+    setParam(id, startV + (startY - e.clientY) / 180 * fine);
+  });
+  const end = e => { if (e.pointerId === pid) pid = null; };
+  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+  el.addEventListener('dblclick', () => setParam(id, 0.5));
+  el.addEventListener('wheel', e => { e.preventDefault(); setParam(id, p.v - e.deltaY / 1500); }, { passive: false });
+  renderKnob(p);
+  return el;
+}
+
+/* ---------- UI: pairs & pads ---------- */
+const pads = [];
+const SRC_NAMES = ['LFO', 'Sosed', 'Sam'];
+function setPairSource(p, s) {
+  if (A) {
+    const m = A.pairMod[p];
+    m.src = s;
+    // next-pair and self need far less depth scaling than LFO
+    smooth(m.fromLfo.gain, s === 0 ? 1 : 0);
+    smooth(m.fromNext.gain, s === 1 ? 2.5 : 0);
+    smooth(m.fromSelf.gain, s === 2 ? 2.5 : 0);
+  }
+  pairSrc[p] = s;
+  const b = document.querySelector(`.src[data-p="${p}"]`);
+  if (b) b.textContent = 'Mod: ' + SRC_NAMES[s];
+  saveStateSoon();
+}
+const pairSrc = [0, 1, 1, 2];
+
+const pairsEl = document.getElementById('pairs');
+for (let p = 0; p < PAIRS; p++) {
+  const box = document.createElement('div');
+  box.className = 'pairbox';
+  box.innerHTML = `<div class="title"><span>PAR ${p + 1}</span><button class="src" data-p="${p}"></button></div>`;
+  const padRow = document.createElement('div'); padRow.className = 'pair';
+  for (let k = 0; k < 2; k++) {
+    const i = p * 2 + k;
+    const pad = document.createElement('div');
+    pad.className = 'pad'; pad.textContent = i + 1;
+    const pointers = new Set();
+    pad.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      if (learnMode) { selectLearn({ kind: 'note', id: i, el: pad }); return; }
+      ensureAudio();
+      pad.setPointerCapture(e.pointerId);
+      if (!pointers.size) voiceOn(i);
+      pointers.add(e.pointerId);
+    });
+    const up = e => {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.delete(e.pointerId);
+      if (!pointers.size) voiceOff(i);
+    };
+    pad.addEventListener('pointerup', up); pad.addEventListener('pointercancel', up);
+    pads.push(pad); padRow.appendChild(pad);
+  }
+  box.appendChild(padRow);
+  const kn = document.createElement('div'); kn.className = 'knobs';
+  kn.appendChild(makeKnob(`tune${p * 2}`));
+  kn.appendChild(makeKnob(`tune${p * 2 + 1}`));
+  kn.appendChild(makeKnob(`mod${p}`));
+  kn.appendChild(makeKnob(`sharp${p}`));
+  kn.appendChild(makeKnob(`env${p}`));
+  kn.appendChild(makeKnob(`hold${p}`));
+  box.appendChild(kn);
+  pairsEl.appendChild(box);
+  box.querySelector('.src').addEventListener('click', () => setPairSource(p, (pairSrc[p] + 1) % 3));
+}
+['lfoA', 'lfoB', 'lfoMix', 'lfoRing'].forEach(id => document.getElementById('lfoKnobs').appendChild(makeKnob(id)));
+['dTime1', 'dTime2', 'dFb', 'dMod', 'dTone', 'dMix'].forEach(id => document.getElementById('delayKnobs').appendChild(makeKnob(id)));
+['drive', 'vol'].forEach(id => document.getElementById('outKnobs').appendChild(makeKnob(id)));
+
+function refreshPad(i) {
+  pads[i].classList.toggle('on', held[i] > 0);
+  sendPadLed(i, held[i] > 0);
+}
+
+/* ---------- keyboard (desktop) ---------- */
+const keyMap = 'asdfghjk';
+const keysDown = new Set();
+window.addEventListener('keydown', e => {
+  const i = keyMap.indexOf(e.key.toLowerCase());
+  if (i < 0 || keysDown.has(i) || e.repeat) return;
+  ensureAudio(); keysDown.add(i); voiceOn(i);
+});
+window.addEventListener('keyup', e => {
+  const i = keyMap.indexOf(e.key.toLowerCase());
+  if (i < 0 || !keysDown.has(i)) return;
+  keysDown.delete(i); voiceOff(i);
+});
+
+/* ---------- state persistence ---------- */
+let saveT = null;
+function saveStateSoon() {
+  clearTimeout(saveT);
+  saveT = setTimeout(() => {
+    const v = {}; Object.values(params).forEach(p => v[p.id] = p.v);
+    store.set('roj.state', { v, pairSrc });
+  }, 300);
+}
+(function loadState() {
+  const s = store.get('roj.state');
+  if (!s) return;
+  if (s.v) Object.entries(s.v).forEach(([k, v]) => { if (params[k] && typeof v === 'number') { params[k].v = v; renderKnob(params[k]); } });
+  if (Array.isArray(s.pairSrc)) s.pairSrc.forEach((x, i) => pairSrc[i] = x | 0);
+})();
+for (let p = 0; p < PAIRS; p++) setPairSource(p, pairSrc[p]);
+
+/* ---------- audio start ---------- */
+const startBtn = document.getElementById('start');
+function ensureAudio() {
+  if (!ctx) {
+    buildAudio();
+    for (let p = 0; p < PAIRS; p++) setPairSource(p, pairSrc[p]);
+    for (let i = 0; i < NV; i++) updateVoiceLevel(i);
+  }
+  if (ctx.state !== 'running') ctx.resume();
+  startBtn.textContent = '● Zvok teče';
+}
+startBtn.addEventListener('click', ensureAudio);
+
+/* ---------- scope ---------- */
+function startScope() {
+  const cv = document.getElementById('scope'), c2 = cv.getContext('2d');
+  const buf = new Float32Array(A.analyser.fftSize);
+  function draw() {
+    const w = cv.width = cv.clientWidth * devicePixelRatio, h = cv.height = cv.clientHeight * devicePixelRatio;
+    A.analyser.getFloatTimeDomainData(buf);
+    c2.clearRect(0, 0, w, h);
+    c2.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+    c2.lineWidth = 1.5 * devicePixelRatio; c2.beginPath();
+    for (let i = 0; i < buf.length; i++) {
+      const x = i / (buf.length - 1) * w, y = h / 2 - buf[i] * h * 0.45;
+      i ? c2.lineTo(x, y) : c2.moveTo(x, y);
+    }
+    c2.stroke();
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+/* ---------- MIDI ---------- */
+// Default map aimed at Akai APC mini (mk1/mk2): faders send CC 48..56,
+// bottom row pads send notes 0..7. APC40: track knobs CC 48..55 on ch1.
+// Anything can be re-mapped with MIDI learn.
+const DEFAULT_MAP = {
+  cc: {
+    '48': 'tune0', '49': 'tune2', '50': 'tune4', '51': 'tune6',
+    '52': 'mod0', '53': 'mod1', '54': 'mod2', '55': 'mod3', '56': 'vol'
+  },
+  note: { '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7,
+          '36': 0, '37': 1, '38': 2, '39': 3, '40': 4, '41': 5, '42': 6, '43': 7 }
+};
+let midiMap = store.get('roj.midimap') || JSON.parse(JSON.stringify(DEFAULT_MAP));
+const midiStatus = document.getElementById('midiStatus');
+let midiOuts = [];
+
+function markMapped() {
+  document.querySelectorAll('.knob').forEach(k => k.classList.toggle('mapped', Object.values(midiMap.cc).includes(k.dataset.id)));
+  pads.forEach((pd, i) => pd.classList.toggle('mapped', Object.values(midiMap.note).includes(i)));
+}
+markMapped();
+
+function selectLearn(t) {
+  document.querySelectorAll('.learning').forEach(e => e.classList.remove('learning'));
+  learnTarget = t; t.el.classList.add('learning');
+  midiStatus.textContent = 'MIDI learn: zdaj premakni drsnik/gumb ali pritisni pad na kontrolerju…';
+}
+document.getElementById('learn').addEventListener('click', e => {
+  learnMode = !learnMode; e.currentTarget.classList.toggle('on', learnMode);
+  if (!learnMode) { learnTarget = null; document.querySelectorAll('.learning').forEach(x => x.classList.remove('learning')); updateMidiStatus(); }
+});
+document.getElementById('clearMap').addEventListener('click', () => {
+  midiMap = JSON.parse(JSON.stringify(DEFAULT_MAP)); store.set('roj.midimap', midiMap); markMapped();
+  midiStatus.textContent = 'Mapa ponastavljena na privzeto (APC mini).';
+});
+
+const noteHeld = {};
+function onMidi(e) {
+  const [st, d1, d2] = e.data; const type = st & 0xf0;
+  if (learnMode && learnTarget) {
+    if (type === 0xb0 && learnTarget.kind === 'cc') {
+      Object.keys(midiMap.cc).forEach(k => { if (midiMap.cc[k] === learnTarget.id) delete midiMap.cc[k]; });
+      midiMap.cc[d1] = learnTarget.id; finishLearn(`CC ${d1} → ${params[learnTarget.id].label}`); return;
+    }
+    if (type === 0x90 && d2 > 0 && learnTarget.kind === 'note') {
+      Object.keys(midiMap.note).forEach(k => { if (midiMap.note[k] === learnTarget.id) delete midiMap.note[k]; });
+      midiMap.note[d1] = learnTarget.id; finishLearn(`Nota ${d1} → glas ${learnTarget.id + 1}`); return;
+    }
+  }
+  if (type === 0xb0) {
+    const id = midiMap.cc[d1]; if (id) setParam(id, d2 / 127);
+  } else if (type === 0x90 && d2 > 0) {
+    const v = midiMap.note[d1];
+    if (v !== undefined && !noteHeld[d1]) { ensureAudio(); noteHeld[d1] = true; voiceOn(v); }
+  } else if (type === 0x80 || (type === 0x90 && d2 === 0)) {
+    const v = midiMap.note[d1];
+    if (v !== undefined && noteHeld[d1]) { noteHeld[d1] = false; voiceOff(v); }
+  }
+}
+function finishLearn(msg) {
+  store.set('roj.midimap', midiMap); markMapped();
+  learnTarget.el.classList.remove('learning'); learnTarget = null;
+  midiStatus.textContent = 'Naučeno: ' + msg + ' — tapni naslednjo kontrolo ali izklopi MIDI learn.';
+}
+function sendPadLed(i, on) {
+  // light the pad on the controller (APC mini: velocity = colour, 0 = off)
+  if (!midiOuts.length) return;
+  const notes = Object.keys(midiMap.note).filter(k => midiMap.note[k] === i && +k < 64);
+  notes.forEach(n => midiOuts.forEach(o => { try { o.send([0x90, +n, on ? 5 : 0]); } catch {} }));
+}
+function updateMidiStatus(access) {
+  access = access || midiAccess;
+  if (!access) return;
+  const ins = [...access.inputs.values()];
+  midiOuts = [...access.outputs.values()];
+  ins.forEach(i => i.onmidimessage = onMidi);
+  midiStatus.textContent = ins.length ? 'MIDI: ' + ins.map(i => i.name).join(', ') : 'MIDI: podpora je, a ni priključenega kontrolerja.';
+}
+let midiAccess = null;
+if (navigator.requestMIDIAccess) {
+  navigator.requestMIDIAccess({ sysex: false }).then(acc => {
+    midiAccess = acc; updateMidiStatus(acc);
+    acc.onstatechange = () => updateMidiStatus(acc);
+  }).catch(() => { midiStatus.textContent = 'MIDI: dostop zavrnjen.'; });
+} else {
+  midiStatus.textContent = 'MIDI: ta brskalnik ne podpira Web MIDI (Safari na iPhonu). Igraj z dotikom ali glej README.';
+}
+})();
+</script>
+</body>
+</html>
