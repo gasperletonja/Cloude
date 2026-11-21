@@ -92,7 +92,7 @@ section h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: .18em; color: var
     <canvas id="scope"></canvas>
   </section>
 </div>
-<p class="hint">Namig: na iPhonu izklopi tihi način (stikalo ob strani), sicer Safari ne predvaja zvoka.
+<p class="hint">Najprej tapni ▶ Zaženi zvok (zaslišiš kratek ton), nato <b>drži</b> pad – zvok je samo med držanjem (ali zavrti gumb »Drži«). Na iPhonu izklopi tihi način in zvišaj glasnost.
 Akai APC mini: spodnja vrsta padov = glasovi 1–8, drsniki = parametri (glej README). MIDI learn: vklopi, tapni gumb/pad, premakni kontrolo.</p>
 
 <script>
@@ -451,15 +451,37 @@ for (let p = 0; p < PAIRS; p++) setPairSource(p, pairSrc[p]);
 /* ---------- audio start ---------- */
 const startBtn = document.getElementById('start');
 function ensureAudio() {
+  // iOS 17+: 'playback' keeps sound on even with the silent switch on
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
   if (!ctx) {
     buildAudio();
     for (let p = 0; p < PAIRS; p++) setPairSource(p, pairSrc[p]);
     for (let i = 0; i < NV; i++) updateVoiceLevel(i);
   }
-  if (ctx.state !== 'running') ctx.resume();
-  startBtn.textContent = '● Zvok teče';
+  if (ctx.state !== 'running') ctx.resume().catch(() => {});
+  // iOS unlock: play a silent buffer inside the user gesture
+  try {
+    const sb = ctx.createBufferSource(); sb.buffer = ctx.createBuffer(1, 1, 22050);
+    sb.connect(ctx.destination); sb.start(0);
+  } catch {}
+  setTimeout(showAudioState, 250);
 }
-startBtn.addEventListener('click', ensureAudio);
+function showAudioState() {
+  if (!ctx) return;
+  startBtn.textContent = ctx.state === 'running' ? '● Zvok teče' : '⚠ Zvok blokiran – tapni';
+}
+function testTone() {
+  // short chime so you know audio works
+  const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain();
+  o.frequency.value = 440; g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.4, t + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+  o.connect(g); g.connect(A.master); o.start(t); o.stop(t + 0.85);
+}
+startBtn.addEventListener('click', () => { ensureAudio(); testTone(); });
+// some iOS versions only unlock audio on touchend
+document.addEventListener('touchend', function unlock() {
+  ensureAudio(); document.removeEventListener('touchend', unlock);
+}, { passive: true });
 
 /* ---------- scope ---------- */
 function startScope() {
