@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="sl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
@@ -23,7 +23,7 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; background: var(--bg); color: var(--ink);
   font: 14px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  -webkit-user-select: none; user-select: none; touch-action: none; overscroll-behavior: none; }
+  -webkit-user-select: none; user-select: none; }
 body { padding: max(12px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
 header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 h1 { font-size: 20px; letter-spacing: .2em; margin: 0 auto 0 0; font-weight: 700; }
@@ -67,19 +67,19 @@ section h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: .18em; color: var
 <body>
 <header>
   <h1>R<span>O</span>J</h1>
-  <button id="start">▶ Zaženi zvok</button>
-  <button id="learn" title="Klikni gumb, nato premakni kontrolo na MIDI kontrolerju">MIDI learn</button>
-  <button id="clearMap">Počisti mapo</button>
-  <div id="midiStatus">MIDI: ni povezan</div>
+  <button id="start">▶ Start audio</button>
+  <button id="learn" title="Tap a knob or pad, then move a control on your MIDI controller">MIDI learn</button>
+  <button id="clearMap">Reset map</button>
+  <div id="midiStatus">MIDI: not connected</div>
 </header>
 
 <div class="wrap">
   <section style="grid-column: 1 / -1;">
-    <h2>Glasovi — drži za igranje</h2>
+    <h2>Voices — hold to play</h2>
     <div class="pairs" id="pairs"></div>
   </section>
   <section>
-    <h2>Hiper LFO</h2>
+    <h2>Hyper LFO</h2>
     <div class="knobs" id="lfoKnobs"></div>
   </section>
   <section>
@@ -87,13 +87,14 @@ section h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: .18em; color: var
     <div class="knobs" id="delayKnobs"></div>
   </section>
   <section>
-    <h2>Izhod</h2>
+    <h2>Output</h2>
     <div class="knobs" id="outKnobs"></div>
     <canvas id="scope"></canvas>
   </section>
 </div>
-<p class="hint">Najprej tapni ▶ Zaženi zvok (zaslišiš kratek ton), nato <b>drži</b> pad – zvok je samo med držanjem (ali zavrti gumb »Drži«). Na iPhonu izklopi tihi način in zvišaj glasnost.
-Akai APC mini: spodnja vrsta padov = glasovi 1–8, drsniki = parametri (glej README). MIDI learn: vklopi, tapni gumb/pad, premakni kontrolo.</p>
+<p class="hint" id="audioDiag">Audio: not started</p>
+<p class="hint">Tap ▶ Start audio (you should hear a short ping), then <b>hold</b> a pad – voices only sound while held (or turn up Hold).
+On iPhone: turn the volume up and the silent switch off. Akai APC mini: bottom pad row = voices 1–8, faders = parameters. MIDI learn: turn it on, tap a knob/pad, move a control.</p>
 
 <script>
 (() => {
@@ -248,7 +249,7 @@ const exp = (v, lo, hi) => lo * Math.pow(hi / lo, v);
 
 /* ---------- voice params ---------- */
 for (let i = 0; i < NV; i++) {
-  defParam(`tune${i}`, `Ton ${i + 1}`, 0.5, v => {
+  defParam(`tune${i}`, `Pitch ${i + 1}`, 0.5, v => {
     if (!A) return;
     // ±18 semitones around base note
     const note = baseNotes[i] + (v - 0.5) * 36;
@@ -257,29 +258,29 @@ for (let i = 0; i < NV; i++) {
 }
 for (let p = 0; p < PAIRS; p++) {
   defParam(`mod${p}`, 'Mod', 0, v => { if (A) smooth(A.pairMod[p].depth.gain, Math.pow(v, 2) * 900); });
-  defParam(`sharp${p}`, 'Ostro', 0, v => {
+  defParam(`sharp${p}`, 'Sharp', 0, v => {
     if (!A) return;
     const c = makeSharpCurve(v);
     A.voices[p * 2].shape.curve = c; A.voices[p * 2 + 1].shape.curve = c;
   });
-  defParam(`env${p}`, 'Ovojnica', 0.35, () => {});
-  defParam(`hold${p}`, 'Drži', 0, () => { if (A) [p * 2, p * 2 + 1].forEach(updateVoiceLevel); });
+  defParam(`env${p}`, 'Env', 0.35, () => {});
+  defParam(`hold${p}`, 'Hold', 0, () => { if (A) [p * 2, p * 2 + 1].forEach(updateVoiceLevel); });
 }
 /* ---------- lfo / fx / out ---------- */
-defParam('lfoA', 'Hitrost A', 0.3, v => { if (A) smooth(A.lfoA.frequency, exp(v, 0.02, 80)); });
-defParam('lfoB', 'Hitrost B', 0.45, v => { if (A) smooth(A.lfoB.frequency, exp(v, 0.02, 80)); });
-defParam('lfoMix', 'B nivo', 0.3, v => { if (A) smooth(A.lfoBGain.gain, v); });
+defParam('lfoA', 'Rate A', 0.3, v => { if (A) smooth(A.lfoA.frequency, exp(v, 0.02, 80)); });
+defParam('lfoB', 'Rate B', 0.45, v => { if (A) smooth(A.lfoB.frequency, exp(v, 0.02, 80)); });
+defParam('lfoMix', 'B level', 0.3, v => { if (A) smooth(A.lfoBGain.gain, v); });
 defParam('lfoRing', 'Sum ↔ Ring', 0, v => {
   if (!A) return; smooth(A.lfoSumAmt.gain, 1 - v); smooth(A.lfoRingAmt.gain, v);
 });
-defParam('dTime1', 'Čas L', 0.35, v => { if (A) smooth(A.dl[0].node.delayTime, exp(v, 0.005, 2.0), 0.15); });
-defParam('dTime2', 'Čas D', 0.42, v => { if (A) smooth(A.dl[1].node.delayTime, exp(v, 0.005, 2.0), 0.15); });
+defParam('dTime1', 'Time L', 0.35, v => { if (A) smooth(A.dl[0].node.delayTime, exp(v, 0.005, 2.0), 0.15); });
+defParam('dTime2', 'Time R', 0.42, v => { if (A) smooth(A.dl[1].node.delayTime, exp(v, 0.005, 2.0), 0.15); });
 defParam('dFb', 'Feedback', 0.45, v => { if (A) A.dl.forEach(d => smooth(d.fb.gain, v * 1.05)); });
-defParam('dMod', 'Mod časa', 0.05, v => { if (A) A.dl.forEach(d => smooth(d.mod.gain, Math.pow(v, 2) * 0.05)); });
+defParam('dMod', 'Time mod', 0.05, v => { if (A) A.dl.forEach(d => smooth(d.mod.gain, Math.pow(v, 2) * 0.05)); });
 defParam('dMix', 'Mix', 0.35, v => { if (A) { smooth(A.wet.gain, v); smooth(A.dry.gain, 1 - v * 0.5); } });
-defParam('dTone', 'Barva', 0.6, v => { if (A) A.dl.forEach(d => smooth(d.tone.frequency, exp(v, 300, 12000))); });
-defParam('drive', 'Distorzija', 0.15, v => { if (A) { A.drive.curve = makeDriveCurve(v); smooth(A.drivePost.gain, 1 - v * 0.35); } });
-defParam('vol', 'Glasnost', 0.7, v => { if (A) smooth(A.master.gain, v * v * 1.4); });
+defParam('dTone', 'Tone', 0.6, v => { if (A) A.dl.forEach(d => smooth(d.tone.frequency, exp(v, 300, 12000))); });
+defParam('drive', 'Drive', 0.15, v => { if (A) { A.drive.curve = makeDriveCurve(v); smooth(A.drivePost.gain, 1 - v * 0.35); } });
+defParam('vol', 'Volume', 0.7, v => { if (A) smooth(A.master.gain, v * v * 1.4); });
 
 /* ---------- voice gating ---------- */
 const held = new Array(NV).fill(0); // count of sources holding the voice (touch + midi)
@@ -352,7 +353,7 @@ function makeKnob(id, label) {
 
 /* ---------- UI: pairs & pads ---------- */
 const pads = [];
-const SRC_NAMES = ['LFO', 'Sosed', 'Sam'];
+const SRC_NAMES = ['LFO', 'Next', 'Self'];
 function setPairSource(p, s) {
   if (A) {
     const m = A.pairMod[p];
@@ -373,7 +374,7 @@ const pairsEl = document.getElementById('pairs');
 for (let p = 0; p < PAIRS; p++) {
   const box = document.createElement('div');
   box.className = 'pairbox';
-  box.innerHTML = `<div class="title"><span>PAR ${p + 1}</span><button class="src" data-p="${p}"></button></div>`;
+  box.innerHTML = `<div class="title"><span>PAIR ${p + 1}</span><button class="src" data-p="${p}"></button></div>`;
   const padRow = document.createElement('div'); padRow.className = 'pair';
   for (let k = 0; k < 2; k++) {
     const i = p * 2 + k;
@@ -459,16 +460,40 @@ function ensureAudio() {
     for (let i = 0; i < NV; i++) updateVoiceLevel(i);
   }
   if (ctx.state !== 'running') ctx.resume().catch(() => {});
-  // iOS unlock: play a silent buffer inside the user gesture
+  // iOS unlock 1: a looping silent <audio> element moves iOS into the 'playback'
+  // audio category, so Web Audio is not muted by the silent switch
+  try {
+    if (!window.__silentEl) {
+      const el = document.createElement('audio');
+      el.src = silentWav(); el.loop = true; el.setAttribute('playsinline', '');
+      window.__silentEl = el;
+    }
+    const pr = window.__silentEl.play(); if (pr) pr.catch(() => {});
+  } catch {}
+  // iOS unlock 2: play a silent buffer inside the user gesture
   try {
     const sb = ctx.createBufferSource(); sb.buffer = ctx.createBuffer(1, 1, 22050);
     sb.connect(ctx.destination); sb.start(0);
   } catch {}
   setTimeout(showAudioState, 250);
 }
+function silentWav() {
+  // 0.5 s of silence, 8 kHz mono 8-bit PCM, built in code
+  const n = 4000, buf = new Uint8Array(44 + n), dv = new DataView(buf.buffer);
+  const w = (o, str) => [...str].forEach((c, k) => buf[o + k] = c.charCodeAt(0));
+  w(0, 'RIFF'); dv.setUint32(4, 36 + n, true); w(8, 'WAVEfmt ');
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, 8000, true); dv.setUint32(28, 8000, true); dv.setUint16(32, 1, true); dv.setUint16(34, 8, true);
+  w(36, 'data'); dv.setUint32(40, n, true); buf.fill(128, 44);
+  let bin = ''; buf.forEach(x => bin += String.fromCharCode(x));
+  return 'data:audio/wav;base64,' + btoa(bin);
+}
 function showAudioState() {
   if (!ctx) return;
-  startBtn.textContent = ctx.state === 'running' ? '● Zvok teče' : '⚠ Zvok blokiran – tapni';
+  const d = document.getElementById('audioDiag');
+  if (d) d.textContent = `Audio: ${ctx.state}, ${ctx.sampleRate} Hz, time ${ctx.currentTime.toFixed(2)} s` +
+    (navigator.audioSession ? `, session ${navigator.audioSession.type}` : '');
+  startBtn.textContent = ctx.state === 'running' ? '● Audio on' : '⚠ Audio blocked – tap again';
 }
 function testTone() {
   // short chime so you know audio works
@@ -528,7 +553,7 @@ markMapped();
 function selectLearn(t) {
   document.querySelectorAll('.learning').forEach(e => e.classList.remove('learning'));
   learnTarget = t; t.el.classList.add('learning');
-  midiStatus.textContent = 'MIDI learn: zdaj premakni drsnik/gumb ali pritisni pad na kontrolerju…';
+  midiStatus.textContent = 'MIDI learn: now move a fader/knob or hit a pad on your controller…';
 }
 document.getElementById('learn').addEventListener('click', e => {
   learnMode = !learnMode; e.currentTarget.classList.toggle('on', learnMode);
@@ -536,7 +561,7 @@ document.getElementById('learn').addEventListener('click', e => {
 });
 document.getElementById('clearMap').addEventListener('click', () => {
   midiMap = JSON.parse(JSON.stringify(DEFAULT_MAP)); store.set('roj.midimap', midiMap); markMapped();
-  midiStatus.textContent = 'Mapa ponastavljena na privzeto (APC mini).';
+  midiStatus.textContent = 'Map reset to default (APC mini).';
 });
 
 const noteHeld = {};
@@ -549,7 +574,7 @@ function onMidi(e) {
     }
     if (type === 0x90 && d2 > 0 && learnTarget.kind === 'note') {
       Object.keys(midiMap.note).forEach(k => { if (midiMap.note[k] === learnTarget.id) delete midiMap.note[k]; });
-      midiMap.note[d1] = learnTarget.id; finishLearn(`Nota ${d1} → glas ${learnTarget.id + 1}`); return;
+      midiMap.note[d1] = learnTarget.id; finishLearn(`Note ${d1} → voice ${learnTarget.id + 1}`); return;
     }
   }
   if (type === 0xb0) {
@@ -565,7 +590,7 @@ function onMidi(e) {
 function finishLearn(msg) {
   store.set('roj.midimap', midiMap); markMapped();
   learnTarget.el.classList.remove('learning'); learnTarget = null;
-  midiStatus.textContent = 'Naučeno: ' + msg + ' — tapni naslednjo kontrolo ali izklopi MIDI learn.';
+  midiStatus.textContent = 'Learned: ' + msg + ' — tap the next control or turn MIDI learn off.';
 }
 function sendPadLed(i, on) {
   // light the pad on the controller (APC mini: velocity = colour, 0 = off)
@@ -579,16 +604,16 @@ function updateMidiStatus(access) {
   const ins = [...access.inputs.values()];
   midiOuts = [...access.outputs.values()];
   ins.forEach(i => i.onmidimessage = onMidi);
-  midiStatus.textContent = ins.length ? 'MIDI: ' + ins.map(i => i.name).join(', ') : 'MIDI: podpora je, a ni priključenega kontrolerja.';
+  midiStatus.textContent = ins.length ? 'MIDI: ' + ins.map(i => i.name).join(', ') : 'MIDI: supported, but no controller connected.';
 }
 let midiAccess = null;
 if (navigator.requestMIDIAccess) {
   navigator.requestMIDIAccess({ sysex: false }).then(acc => {
     midiAccess = acc; updateMidiStatus(acc);
     acc.onstatechange = () => updateMidiStatus(acc);
-  }).catch(() => { midiStatus.textContent = 'MIDI: dostop zavrnjen.'; });
+  }).catch(() => { midiStatus.textContent = 'MIDI: access denied.'; });
 } else {
-  midiStatus.textContent = 'MIDI: ta brskalnik ne podpira Web MIDI (Safari na iPhonu). Igraj z dotikom ali glej README.';
+  midiStatus.textContent = 'MIDI: this browser has no Web MIDI (e.g. Safari on iPhone). Play by touch.';
 }
 })();
 </script>
